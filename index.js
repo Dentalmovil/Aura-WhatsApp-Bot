@@ -19,7 +19,7 @@ const client = new Client({
 });
 
 // Configuración de Aura Trade AI - dentalmovilr4
-const MI_NUMERO = 'tu_numero_aqui@c.us'; // Asegúrate de que tu número esté aquí
+const MI_NUMERO = '573114275056@c.us'; // Tu número configurado correctamente
 
 client.on('qr', qr => {
     qrcode.generate(qr, {small: true});
@@ -27,7 +27,7 @@ client.on('qr', qr => {
 
 client.on('ready', async () => {
     console.log('🤖 Aura WhatsApp Bot (dentalmovilr4) EN LÍNEA con Radar + Dólar.');
-    
+
     setTimeout(async () => {
         try {
             await client.sendMessage(MI_NUMERO, '✅ *Aura Trade AI:* Radar de Criptos y Dólar iniciado.');
@@ -39,7 +39,7 @@ client.on('ready', async () => {
 
 client.on('message', async msg => {
     const text = msg.body.toLowerCase();
-    
+
     if (text === 'precio') {
         try {
             // Consulta simultánea: Criptos y Dólar
@@ -47,7 +47,7 @@ client.on('message', async msg => {
                 axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ripple,solana&vs_currencies=usd'),
                 axios.get('https://open.er-api.com/v6/latest/USD')
             ]);
-            
+
             const { bitcoin, ripple, solana } = cryptoRes.data;
             const cop = dolarRes.data.rates.COP;
 
