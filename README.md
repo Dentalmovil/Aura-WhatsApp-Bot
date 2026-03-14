@@ -1,4 +1,4 @@
-# 🤖 Aura Trade AI - by dentalmovilr4
+# 🤖 Aura WhatsApp bot- by dentalmovilr4
 Radar de criptomonedas y Dólar USD/COP operando desde Colombia.
 # 🌟 Aura WhatsApp Bot
 Bot inteligente con memoria persistente, datos cripto y asistencia agro-legal.
