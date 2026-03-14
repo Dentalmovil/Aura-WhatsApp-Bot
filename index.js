@@ -1,79 +1,89 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
-const axios = require('axios');
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
+const pino = require("pino");
+const axios = require("axios");
+const http = require('http');
+const fs = require('fs');
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        executablePath: '/data/data/com.termux/files/usr/bin/chromium',
-        handleSIGINT: false,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-zygote',
-            '--single-process'
-        ]
-    }
-});
+// Servidor para UptimeRobot
+http.createServer((req, res) => { res.write("Aura WhatsApp Bot: Online con Memoria"); res.end(); }).listen(8080);
 
-// Configuración de Aura Trade AI - dentalmovilr4
-const MI_NUMERO = '573114275056@c.us'; // Tu número configurado correctamente
+// Función para gestionar la base de datos de recordatorios
+const DB_PATH = './recordatorios.json';
+if (!fs.existsSync(DB_PATH)) fs.writeFileSync(DB_PATH, JSON.stringify([]));
 
-client.on('qr', qr => {
-    qrcode.generate(qr, {small: true});
-});
+function guardarRecordatorio(recordatorio) {
+    const db = JSON.parse(fs.readFileSync(DB_PATH));
+    db.push(recordatorio);
+    fs.writeFileSync(DB_PATH, JSON.stringify(db));
+}
 
-client.on('ready', async () => {
-    console.log('🤖 Aura WhatsApp Bot (dentalmovilr4) EN LÍNEA con Radar + Dólar.');
+async function connect() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_session');
+    const { version } = await fetchLatestBaileysVersion();
+    const sock = makeWASocket({ version, auth: state, logger: pino({ level: "silent" }), browser: ["Ubuntu", "Chrome", "20.0.04"] });
 
-    setTimeout(async () => {
-        try {
-            await client.sendMessage(MI_NUMERO, '✅ *Aura Trade AI:* Radar de Criptos y Dólar iniciado.');
-        } catch (e) {
-            console.log("El bot está activo (saludo inicial saltado por estabilidad).");
+    // --- REVISIÓN DE RECORDATORIOS AL INICIAR ---
+    sock.ev.on("connection.update", (up) => {
+        if (up.connection === "open") {
+            console.log("✅ Aura WhatsApp Bot: ONLINE");
+            const db = JSON.parse(fs.readFileSync(DB_PATH));
+            const ahora = Date.now();
+            
+            db.forEach((rec, index) => {
+                const tiempoRestante = rec.fechaEjecucion - ahora;
+                if (tiempoRestante > 0) {
+                    setTimeout(() => {
+                        sock.sendMessage(rec.jid, { text: `⏰ *MEMORIA AURA:* No se me olvidó, colega: *${rec.tarea}*` });
+                    }, tiempoRestante);
+                }
+            });
         }
-    }, 5000);
-});
-
-client.on('message', async msg => {
-    const text = msg.body.toLowerCase();
-
-    if (text === 'precio') {
-        try {
-            // Consulta simultánea: Criptos y Dólar
-            const [cryptoRes, dolarRes] = await Promise.all([
-                axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ripple,solana&vs_currencies=usd'),
-                axios.get('https://open.er-api.com/v6/latest/USD')
-            ]);
-
-            const { bitcoin, ripple, solana } = cryptoRes.data;
-            const cop = dolarRes.data.rates.COP;
-
-            msg.reply(
-                `📊 *Aura Trade AI - dentalmovilr4*\n\n` +
-                `💵 *Dólar:* $${cop.toLocaleString('es-CO')} COP\n` +
-                `₿ *BTC:* $${bitcoin.usd} USD\n` +
-                `🔹 *XRP:* $${ripple.usd} USD\n` +
-                `☀️ *SOL:* $${solana.usd} USD\n\n` +
-                `📍 _Datos en tiempo real_`
-            );
-        } catch (e) {
-            msg.reply('❌ Error al conectar con los mercados. Reintenta en un momento.');
-        }
-    }
-});
-
-const startBot = () => {
-    client.initialize().catch(err => {
-        console.log('🔄 Reintentando conexión en 10 segundos...');
-        setTimeout(startBot, 10000);
     });
-};
 
-client.on('disconnected', () => {
-    startBot();
-});
+    sock.ev.on("messages.upsert", async (m) => {
+        const msg = m.messages[0];
+        if (!msg.message || msg.key.fromMe) return;
 
-startBot();
+        const remoteJid = msg.key.remoteJid;
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+        const lowerText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+        // --- FUNCIÓN DE RECORDAR CON GUARDADO ---
+        if (lowerText.startsWith("recordar en")) {
+            const parts = lowerText.split(" ");
+            const tiempo = parseInt(parts[2]);
+            const unidad = parts[3];
+            const tarea = parts.slice(4).join(" ");
+            let ms = unidad.includes("minuto") ? tiempo * 60000 : unidad.includes("hora") ? tiempo * 3600000 : tiempo * 1000;
+
+            if (ms > 0 && tarea) {
+                const fechaEjecucion = Date.now() + ms;
+                guardarRecordatorio({ jid: remoteJid, tarea, fechaEjecucion });
+                
+                await sock.sendMessage(remoteJid, { text: `✅ Guardado en mi memoria: *${tarea}*. Te aviso en ${tiempo} ${unidad}.` });
+                
+                setTimeout(() => {
+                    sock.sendMessage(remoteJid, { text: `⏰ *AVISO:* ${tarea}` });
+                }, ms);
+            }
+        }
+
+        // --- CRIPTO, AGRO Y LEYES ---
+        else if (lowerText.match(/(precio|btc|xrp|bnb|dolar)/)) {
+            const res = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ripple,binancecoin&vs_currencies=usd");
+            const btc = res.data.bitcoin.usd;
+            const bnb = res.data.binancecoin.usd;
+            const xrp = res.data.ripple.usd;
+            await sock.sendMessage(remoteJid, { text: `💰 *Aura Market*\n\nBTC: $${btc}\nBNB: $${bnb}\nXRP: $${xrp}` });
+        }
+        else if (lowerText.includes("constitucion")) {
+            await sock.sendMessage(remoteJid, { text: "🇨🇴 *Aura Legal:* El Art. 1 dice que Colombia es un Estado social de derecho. ¿Quieres saber sobre la Ley de Tierras?" });
+        }
+        else if (lowerText.match(/(ganaderia|maiz)/)) {
+            await sock.sendMessage(remoteJid, { text: "🌽🐄 *Aura Agro:* Monitoreando trazabilidad ICA y suelos. ¡Dale con toda, colega!" });
+        }
+    });
+
+    sock.ev.on("creds.update", saveCreds);
+}
+connect();
