@@ -6,7 +6,7 @@ const fs = require('fs');
 const qrcode = require('qrcode-terminal');
 
 // Servidor para UptimeRobot y evitar que el contenedor se duerma
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8081;
 http.createServer((req, res) => { 
     res.write("Aura WhatsApp Bot: Online con Memoria"); 
     res.end(); 
