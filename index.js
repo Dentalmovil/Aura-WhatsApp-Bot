@@ -44,7 +44,7 @@ async function connect() {
         auth: state, 
         logger: pino({ level: "silent" }), 
         printQRInTerminal: false, // Desactivamos QR para usar código
-        browser: ["Ubuntu", "Chrome", "20.0.04"] 
+        browser: ["Aura-Cesar", "Chrome", "110.0.0"] 
     });
 
     // --- LÓGICA DE VINCULACIÓN POR CÓDIGO (Para ver en Actions) ---
