@@ -1,0 +1,31 @@
+name: Aura Bot 24/7
+
+on:
+  schedule:
+    - cron: '*/20 * * * *' # Se reinicia cada 20 min para mantenerse vivo
+  workflow_dispatch: # Permite iniciarlo manualmente
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar Dependencias
+        run: npm install
+
+      - name: Ejecutar Aura Bot
+        env:
+          # Aquí es donde ocurre la magia: conecta tus secretos con el bot
+          ETH_API_KEY: ${{ secrets.ETH_API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PORT: 8081
+        run: node index.js
