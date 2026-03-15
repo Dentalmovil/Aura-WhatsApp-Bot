@@ -1,20 +1,19 @@
-require('dotenv').config(); // 1. CARGA LAS LLAVES SECRETAS (Invisibles en GitHub)
+require('dotenv').config(); 
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const axios = require("axios");
 const http = require('http');
 const fs = require('fs');
-const qrcode = require('qrcode-terminal');
 
-// --- CONFIGURACIÓN DE SECRETOS ---
-const ETH_KEY = process.env.ETH_API_KEY; // Tu clave RRID...
-const TG_TOKEN = process.env.TELEGRAM_TOKEN; // De BotFather
-const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID; // Tu ID de usuario
+// --- CONFIGURACIÓN DE SECRETOS (Desde GitHub Secrets) ---
+const TG_TOKEN = process.env.TELEGRAM_TOKEN;
+const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const MI_NUMERO = "573114275056"; // Tu número configurado
 
-// Servidor de monitoreo
+// Servidor de monitoreo (Para Uptime)
 const PORT = process.env.PORT || 8081;
 http.createServer((req, res) => { 
-    res.write("Aura Bot: Activo en WhatsApp y Telegram"); 
+    res.write("Aura Bot: Activo en GitHub Actions"); 
     res.end(); 
 }).listen(PORT);
 
@@ -28,7 +27,6 @@ function guardarRecordatorio(recordatorio) {
     fs.writeFileSync(DB_PATH, JSON.stringify(db));
 }
 
-// --- FUNCIÓN PARA ENVIAR A TELEGRAM ---
 async function enviarTelegram(mensaje) {
     if (!TG_TOKEN || !TG_CHAT_ID) return;
     try {
@@ -45,19 +43,28 @@ async function connect() {
         version, 
         auth: state, 
         logger: pino({ level: "silent" }), 
-        printQRInTerminal: false,
-        browser: ["Aura Bot", "Chrome", "1.0.0"] 
+        printQRInTerminal: false, // Desactivamos QR para usar código
+        browser: ["Ubuntu", "Chrome", "20.0.04"] 
     });
 
-    sock.ev.on("connection.update", (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
-            console.log("\n📢 ESCANEA CON WHATSAPP:");
-            qrcode.generate(qr, { small: true });
-        }
+    // --- LÓGICA DE VINCULACIÓN POR CÓDIGO (Para ver en Actions) ---
+    if (!sock.authState.creds.registered) {
+        console.log("⏳ Generando código de vinculación para: " + MI_NUMERO);
+        setTimeout(async () => {
+            try {
+                let code = await sock.requestPairingCode(MI_NUMERO);
+                console.log(`\n\n🚀 TU CÓDIGO DE VINCULACIÓN ES: ${code}\n\n`);
+            } catch (err) {
+                console.log("Error al generar código:", err);
+            }
+        }, 5000);
+    }
+
+    sock.ev.on("connection.update", async (update) => {
+        const { connection, lastDisconnect } = update;
         if (connection === "open") {
             console.log("\n✅ Aura WhatsApp Bot: ONLINE");
-            enviarTelegram("🚀 *Aura Sistema:* Conectado y listo para monitorear Ethereum.");
+            await enviarTelegram("🚀 *Aura Sistema:* Conectado desde GitHub Actions.");
         }
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
@@ -72,30 +79,22 @@ async function connect() {
         if (!msg.message || msg.key.fromMe) return;
 
         const remoteJid = msg.key.remoteJid;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-        const lowerText = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase();
 
-        // 1. COMANDO ETHEREUM (Usa tu clave secreta)
-        if (lowerText.includes("eth") || lowerText.includes("ethereum")) {
+        // 1. COMANDO ETHEREUM
+        if (text.includes("eth") || text.includes("ethereum")) {
             try {
-                // Aquí usamos tu clave para una consulta más precisa si es necesario
                 const res = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd,cop");
                 const ethUsd = res.data.ethereum.usd;
-                const ethCop = res.data.ethereum.cop.toLocaleString('es-CO');
-                
-                const responseText = `💎 *Aura Ethereum Update*\n\nPrecio: *$${ethUsd} USD*\nCOP: *$${ethCop}*\n\n_Seguridad: Nodo conectado_`;
-                
-                // Enviar a ambos canales
+                const responseText = `💎 *Aura Ethereum Update*\n\nPrecio: *$${ethUsd} USD*`;
                 await sock.sendMessage(remoteJid, { text: responseText });
                 await enviarTelegram(responseText);
-            } catch (e) {
-                await sock.sendMessage(remoteJid, { text: "❌ Error al conectar con la red Ethereum." });
-            }
+            } catch (e) { console.log("Error API"); }
         }
 
-        // 2. RECORDATORIOS (Tu lógica original mejorada)
-        else if (lowerText.startsWith("recordar en")) {
-            const parts = lowerText.split(" ");
+        // 2. RECORDATORIOS
+        else if (text.startsWith("recordar en")) {
+            const parts = text.split(" ");
             const tiempo = parseInt(parts[2]);
             const unidad = parts[3];
             const tarea = parts.slice(4).join(" ");
@@ -104,22 +103,19 @@ async function connect() {
             if (ms > 0 && tarea) {
                 const fechaEjecucion = Date.now() + ms;
                 guardarRecordatorio({ jid: remoteJid, tarea, fechaEjecucion });
-                await sock.sendMessage(remoteJid, { text: `✅ Guardado: *${tarea}*. Te aviso en ${tiempo} ${unidad}.` });
+                await sock.sendMessage(remoteJid, { text: `✅ Guardado: *${tarea}*` });
                 setTimeout(() => {
                     sock.sendMessage(remoteJid, { text: `⏰ *AVISO:* ${tarea}` });
                     enviarTelegram(`⏰ *Recordatorio:* ${tarea}`);
                 }, ms);
             }
         }
-
-        // 3. LEGAL Y AGRO
-        else if (lowerText.match(/(constitucion|ganaderia|maiz)/)) {
-            const agroMsg = "🌽🐄 *Aura Agro:* Trazabilidad ICA activa. Estado: Suelos óptimos en Cesar.";
-            await sock.sendMessage(remoteJid, { text: agroMsg });
+        
+        // 3. AGRO
+        else if (text.match(/(ganaderia|maiz)/)) {
+            await sock.sendMessage(remoteJid, { text: "🌽🐄 *Aura Agro:* Trazabilidad activa en el Cesar." });
         }
     });
 }
 
 connect().catch(err => console.log(err));
-
-
