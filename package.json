@@ -12,9 +12,11 @@
     "axios": "^1.7.9",
     "dotenv": "^16.4.5",
     "file-type": "^21.3.1",
+    "flatted": "^3.4.2",
+    "music-metadata": "^11.12.3",
     "pino": "^9.0.0",
-    "qrcode-terminal": "^0.12.0",
-    "pm2": "^5.3.1"
+    "pm2": "^5.3.1",
+    "qrcode-terminal": "^0.12.0"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -22,4 +24,3 @@
   "author": "Dentalmovilr4",
   "license": "MIT"
 }
-
