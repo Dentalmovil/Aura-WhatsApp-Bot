@@ -4,20 +4,18 @@ const pino = require("pino");
 const axios = require("axios");
 const http = require('http');
 const fs = require('fs');
+const qrcode = require('qrcode-terminal'); // Librería para forzar el QR
 
-// --- CONFIGURACIÓN DE SECRETOS (Desde GitHub Secrets) ---
+// --- CONFIGURACIÓN ---
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const MI_NUMERO = "+573157176984"; // Tu número configurado
 
-// Servidor de monitoreo (Para Uptime)
 const PORT = process.env.PORT || 8081;
 http.createServer((req, res) => { 
-    res.write("Aura Bot: Activo en GitHub Actions"); 
+    res.write("Aura Bot: Activo"); 
     res.end(); 
 }).listen(PORT);
 
-// Gestión de recordatorios
 const DB_PATH = './recordatorios.json';
 if (!fs.existsSync(DB_PATH)) fs.writeFileSync(DB_PATH, JSON.stringify([]));
 
@@ -36,36 +34,31 @@ async function enviarTelegram(mensaje) {
 }
 
 async function connect() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_session');
+    const { state, saveCreds } = await useMultiFileAuthState('session');
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({ 
         version, 
         auth: state, 
         logger: pino({ level: "silent" }), 
-        printQRInTerminal: false, // Desactivamos QR para usar código
-        browser: ["Aura-Cesar", "Chrome", "110.0.0"] 
+        printQRInTerminal: false, // Lo manejamos nosotros manualmente abajo
+        browser: ["Aura-Dentalmovilr4", "Safari", "1.0.0"] 
     });
 
-    // --- LÓGICA DE VINCULACIÓN POR CÓDIGO (Para ver en Actions) ---
-    if (!sock.authState.creds.registered) {
-        console.log("⏳ Generando código de vinculación para: " + MI_NUMERO);
-        setTimeout(async () => {
-            try {
-                let code = await sock.requestPairingCode(MI_NUMERO);
-                console.log(`\n\n🚀 TU CÓDIGO DE VINCULACIÓN ES: ${code}\n\n`);
-            } catch (err) {
-                console.log("Error al generar código:", err);
-            }
-        }, 5000);
-    }
-
     sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+        
+        // --- ESTO DIBUJARÁ EL QR EN TERMUX ---
+        if (qr) {
+            console.log("\n✨ [AURA] ESCANEA EL CÓDIGO QR:");
+            qrcode.generate(qr, { small: true });
+        }
+
         if (connection === "open") {
             console.log("\n✅ Aura WhatsApp Bot: ONLINE");
-            await enviarTelegram("🚀 *Aura Sistema:* Conectado desde GitHub Actions.");
+            await enviarTelegram("🚀 *Aura Sistema:* Conectado con éxito.");
         }
+        
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
             if (reason !== DisconnectReason.loggedOut) connect();
@@ -81,7 +74,6 @@ async function connect() {
         const remoteJid = msg.key.remoteJid;
         const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase();
 
-        // 1. COMANDO ETHEREUM
         if (text.includes("eth") || text.includes("ethereum")) {
             try {
                 const res = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd,cop");
@@ -92,7 +84,6 @@ async function connect() {
             } catch (e) { console.log("Error API"); }
         }
 
-        // 2. RECORDATORIOS
         else if (text.startsWith("recordar en")) {
             const parts = text.split(" ");
             const tiempo = parseInt(parts[2]);
@@ -110,8 +101,7 @@ async function connect() {
                 }, ms);
             }
         }
-        
-        // 3. AGRO
+
         else if (text.match(/(ganaderia|maiz)/)) {
             await sock.sendMessage(remoteJid, { text: "🌽🐄 *Aura Agro:* Trazabilidad activa en el Cesar." });
         }
@@ -119,3 +109,4 @@ async function connect() {
 }
 
 connect().catch(err => console.log(err));
+
