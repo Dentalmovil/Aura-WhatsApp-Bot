@@ -8,7 +8,7 @@ const fs = require('fs');
 // --- CONFIGURACIÓN DE SECRETOS (Desde GitHub Secrets) ---
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const MI_NUMERO = "+573114275056"; // Tu número configurado
+const MI_NUMERO = "+573157176984"; // Tu número configurado
 
 // Servidor de monitoreo (Para Uptime)
 const PORT = process.env.PORT || 8081;
