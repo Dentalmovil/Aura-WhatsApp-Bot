@@ -4,7 +4,6 @@ const pino = require("pino");
 const axios = require("axios");
 const http = require('http');
 const fs = require('fs');
-const qrcode = require('qrcode-terminal'); // Librería para forzar el QR
 
 // --- CONFIGURACIÓN ---
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
@@ -41,24 +40,31 @@ async function connect() {
         version, 
         auth: state, 
         logger: pino({ level: "silent" }), 
-        printQRInTerminal: false, // Lo manejamos nosotros manualmente abajo
+        printQRInTerminal: false, // Desactivamos el QR de texto que se rompe
         browser: ["Aura-Dentalmovilr4", "Safari", "1.0.0"] 
     });
 
     sock.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect, qr } = update;
-        
-        // --- ESTO DIBUJARÁ EL QR EN TERMUX ---
+
+        // --- SOLUCIÓN: GENERADOR DE QR EN IMAGEN ---
         if (qr) {
-            console.log("\n✨ [AURA] ESCANEA EL CÓDIGO QR:");
-            qrcode.generate(qr, { small: true });
+            const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
+            
+            console.log("\n--------------------------------------------------");
+            console.log("✨ [AURA] ESCANEA EL CÓDIGO QR DESDE ESTE LINK:");
+            console.log(qrImageUrl);
+            console.log("--------------------------------------------------\n");
+
+            // Te lo envía a Telegram para que lo abras desde el celular directamente
+            await enviarTelegram(`✨ *Aura Bot:* Escanea este QR para conectar:\n\n${qrImageUrl}`);
         }
 
         if (connection === "open") {
             console.log("\n✅ Aura WhatsApp Bot: ONLINE");
             await enviarTelegram("🚀 *Aura Sistema:* Conectado con éxito.");
         }
-        
+
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
             if (reason !== DisconnectReason.loggedOut) connect();
@@ -74,6 +80,7 @@ async function connect() {
         const remoteJid = msg.key.remoteJid;
         const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase();
 
+        // Lógica de Precios Crypto
         if (text.includes("eth") || text.includes("ethereum")) {
             try {
                 const res = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd,cop");
@@ -84,6 +91,7 @@ async function connect() {
             } catch (e) { console.log("Error API"); }
         }
 
+        // Lógica de Recordatorios
         else if (text.startsWith("recordar en")) {
             const parts = text.split(" ");
             const tiempo = parseInt(parts[2]);
@@ -102,6 +110,7 @@ async function connect() {
             }
         }
 
+        // Lógica Agro
         else if (text.match(/(ganaderia|maiz)/)) {
             await sock.sendMessage(remoteJid, { text: "🌽🐄 *Aura Agro:* Trazabilidad activa en el Cesar." });
         }
@@ -109,4 +118,3 @@ async function connect() {
 }
 
 connect().catch(err => console.log(err));
-
