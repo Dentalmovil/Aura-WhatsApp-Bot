@@ -5,24 +5,26 @@ const axios = require("axios");
 const http = require('http');
 const fs = require('fs');
 
-// --- CONFIGURACIÓN ---
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const miNumero = "573157176984";
 
+// --- SERVIDOR WEB + AUTO-PING ---
 const PORT = process.env.PORT || 8081;
-http.createServer((req, res) => { 
-    res.write("Aura Bot: Activo"); 
+const server = http.createServer((req, res) => { 
+    res.write("Aura Bot: Activo y Despierto"); 
     res.end(); 
-}).listen(PORT);
+});
 
-const DB_PATH = './recordatorios.json';
-if (!fs.existsSync(DB_PATH)) fs.writeFileSync(DB_PATH, JSON.stringify([]));
-
-function guardarRecordatorio(recordatorio) {
-    const db = JSON.parse(fs.readFileSync(DB_PATH));
-    db.push(recordatorio);
-    fs.writeFileSync(DB_PATH, JSON.stringify(db));
-}
+server.listen(PORT, () => {
+    console.log(`📡 Servidor escuchando en puerto ${PORT}`);
+    // Auto-ping cada 5 minutos para evitar que el servidor se duerma
+    setInterval(() => {
+        http.get(`http://localhost:${PORT}`, (res) => {
+            console.log("💓 Auto-ping enviado para mantener vivo el proceso.");
+        });
+    }, 300000); 
+});
 
 async function enviarTelegram(mensaje) {
     if (!TG_TOKEN || !TG_CHAT_ID) return;
@@ -40,34 +42,36 @@ async function connect() {
         version, 
         auth: state, 
         logger: pino({ level: "silent" }), 
-        printQRInTerminal: false, // Desactivamos el QR de texto que se rompe
-        browser: ["Aura-Dentalmovilr4", "Safari", "1.0.0"] 
+        printQRInTerminal: false, 
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        keepAliveIntervalMs: 30000 // Mantiene la conexión de WhatsApp activa
     });
 
+    if (!sock.authState.creds.registered) {
+        setTimeout(async () => {
+            try {
+                let code = await sock.requestPairingCode(miNumero);
+                await enviarTelegram(`🔑 *Aura New Code:* \`${code}\``);
+            } catch (err) { console.log("Error Pairing:", err); }
+        }, 5000); 
+    }
+
     sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        // --- SOLUCIÓN: GENERADOR DE QR EN IMAGEN ---
-        if (qr) {
-            const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
-            
-            console.log("\n--------------------------------------------------");
-            console.log("✨ [AURA] ESCANEA EL CÓDIGO QR DESDE ESTE LINK:");
-            console.log(qrImageUrl);
-            console.log("--------------------------------------------------\n");
-
-            // Te lo envía a Telegram para que lo abras desde el celular directamente
-            await enviarTelegram(`✨ *Aura Bot:* Escanea este QR para conectar:\n\n${qrImageUrl}`);
-        }
+        const { connection, lastDisconnect } = update;
 
         if (connection === "open") {
-            console.log("\n✅ Aura WhatsApp Bot: ONLINE");
-            await enviarTelegram("🚀 *Aura Sistema:* Conectado con éxito.");
+            console.log("✅ Aura Online");
+            await enviarTelegram("🚀 *Aura:* Sistema reiniciado y conectado.");
         }
 
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut) connect();
+            console.log("❌ Conexión cerrada. Razón:", reason);
+            // Si no es un cierre voluntario, intenta reconectar inmediatamente
+            if (reason !== DisconnectReason.loggedOut) {
+                console.log("🔄 Reintentando conexión...");
+                connect();
+            }
         }
     });
 
@@ -76,45 +80,18 @@ async function connect() {
     sock.ev.on("messages.upsert", async (m) => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
-
         const remoteJid = msg.key.remoteJid;
         const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase();
 
-        // Lógica de Precios Crypto
-        if (text.includes("eth") || text.includes("ethereum")) {
-            try {
-                const res = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd,cop");
-                const ethUsd = res.data.ethereum.usd;
-                const responseText = `💎 *Aura Ethereum Update*\n\nPrecio: *$${ethUsd} USD*`;
-                await sock.sendMessage(remoteJid, { text: responseText });
-                await enviarTelegram(responseText);
-            } catch (e) { console.log("Error API"); }
+        if (text.includes("eth")) {
+            const res = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
+            await sock.sendMessage(remoteJid, { text: `💎 ETH: $${res.data.ethereum.usd} USD` });
         }
-
-        // Lógica de Recordatorios
-        else if (text.startsWith("recordar en")) {
-            const parts = text.split(" ");
-            const tiempo = parseInt(parts[2]);
-            const unidad = parts[3];
-            const tarea = parts.slice(4).join(" ");
-            let ms = unidad.includes("min") ? tiempo * 60000 : unidad.includes("hor") ? tiempo * 3600000 : tiempo * 1000;
-
-            if (ms > 0 && tarea) {
-                const fechaEjecucion = Date.now() + ms;
-                guardarRecordatorio({ jid: remoteJid, tarea, fechaEjecucion });
-                await sock.sendMessage(remoteJid, { text: `✅ Guardado: *${tarea}*` });
-                setTimeout(() => {
-                    sock.sendMessage(remoteJid, { text: `⏰ *AVISO:* ${tarea}` });
-                    enviarTelegram(`⏰ *Recordatorio:* ${tarea}`);
-                }, ms);
-            }
-        }
-
-        // Lógica Agro
         else if (text.match(/(ganaderia|maiz)/)) {
-            await sock.sendMessage(remoteJid, { text: "🌽🐄 *Aura Agro:* Trazabilidad activa en el Cesar." });
+            await sock.sendMessage(remoteJid, { text: "🌽🐄 *Aura Agro:* Trazabilidad activa." });
         }
     });
 }
 
-connect().catch(err => console.log(err));
+connect().catch(err => console.log("Error fatal:", err));
+
