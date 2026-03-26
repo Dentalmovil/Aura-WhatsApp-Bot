@@ -7,7 +7,7 @@ const fs = require('fs');
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const miNumero = "573157176984";
+const miNumero = "573114275056";
 
 // --- SERVIDOR WEB + AUTO-PING ---
 const PORT = process.env.PORT || 8081;
