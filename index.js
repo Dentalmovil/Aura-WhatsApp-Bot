@@ -77,21 +77,39 @@ async function connect() {
 
     sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on("messages.upsert", async (m) => {
+        sock.ev.on("messages.upsert", async (m) => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
         const remoteJid = msg.key.remoteJid;
         const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase();
 
-        if (text.includes("eth")) {
-            const res = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
-            await sock.sendMessage(remoteJid, { text: `💎 ETH: $${res.data.ethereum.usd} USD` });
+        // --- COMANDO CRYPTO & DIVISAS (BTC, ETH, SOL, TRM) ---
+        if (text.match(/(precio|valor|crypto|eth|btc|sol|dolar)/)) {
+            try {
+                // Consultamos BTC, ETH, SOL y el USD en COP
+                const res = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd,cop");
+                const data = res.data;
+
+                const trm = data.bitcoin.cop / data.bitcoin.usd; // Calculamos el valor del dólar en COP
+                
+                let responseText = `✨ *Aura Market Update* ✨\n\n`;
+                responseText += `💵 *Dólar (TRM):* $${trm.toLocaleString('es-CO', {maximumFractionDigits: 0})} COP\n`;
+                responseText += `₿ *Bitcoin:* $${data.bitcoin.usd.toLocaleString()} USD\n`;
+                responseText += `💎 *Ethereum:* $${data.ethereum.usd.toLocaleString()} USD\n`;
+                responseText += `☀️ *Solana:* $${data.solana.usd.toLocaleString()} USD\n\n`;
+                responseText += `*Aura System:* Datos actualizados.`;
+
+                await sock.sendMessage(remoteJid, { text: responseText });
+            } catch (e) { 
+                console.log("Error API Crypto:", e.message);
+                await sock.sendMessage(remoteJid, { text: "❌ Error al consultar los precios. Intenta más tarde." });
+            }
         }
+
+        // Comando Agro (Mantenemos tu lógica del Cesar)
         else if (text.match(/(ganaderia|maiz)/)) {
-            await sock.sendMessage(remoteJid, { text: "🌽🐄 *Aura Agro:* Trazabilidad activa." });
+            await sock.sendMessage(remoteJid, { text: "🌽🐄 *Aura Agro:* Trazabilidad activa en el Cesar." });
         }
     });
-}
 
-connect().catch(err => console.log("Error fatal:", err));
 
